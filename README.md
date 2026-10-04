@@ -1,4 +1,4 @@
-# Sankalp Android App
+#.Sankalp Android App
 
 Features in this starter build:
 - Daily Sankalp text
