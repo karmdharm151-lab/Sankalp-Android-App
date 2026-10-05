@@ -1,32 +1,278 @@
-name: Build Android APK
+package com.sankalp.app
 
-on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
+import android.content.Context
+import android.os.Bundle
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import java.util.UUID
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+data class MediaItem(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val uri: String,
+    val type: String
+)
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+class MainActivity : ComponentActivity() {
+    private var lastBack = 0L
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    SankalpApp()
+                }
+            }
+        }
+    }
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+    fun exitOnDoubleBack() {
+        val now = System.currentTimeMillis()
+        if (now - lastBack < 1800) {
+            finish()
+        } else {
+            lastBack = now
+            Toast.makeText(this, "Press back again to exit", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
 
-      - name: Build Debug APK
-        run: gradle assembleDebug
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SankalpApp() {
+    val ctx = LocalContext.current
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var count by rememberSaveable { mutableIntStateOf(0) }
+    var target by rememberSaveable { mutableIntStateOf(108) }
+    var sankalp by rememberSaveable { mutableStateOf("") }
+    var media by remember { mutableStateOf(listOf<MediaItem>()) }
+    var webUrl by rememberSaveable { mutableStateOf("https://www.google.com") }
 
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Sankalp-App-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        media = media + uris.map {
+            MediaItem(
+                name = it.lastPathSegment ?: "Media",
+                uri = it.toString(),
+                type = "file"
+            )
+        }
+    }
+
+    BackHandler {
+        if (tab != 0) {
+            tab = 0
+        } else {
+            (ctx as? MainActivity)?.exitOnDoubleBack()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Sankalp") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+        },
+        bottomBar = {
+            NavigationBar {
+                val tabs = listOf("Home", "Mantra", "Audio", "Video", "Images", "Browser", "Settings")
+                tabs.forEachIndexed { i, n ->
+                    NavigationBarItem(
+                        selected = tab == i,
+                        onClick = { tab = i },
+                        icon = {},
+                        label = { Text(n) }
+                    )
+                }
+            }
+        }
+    ) { p ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(p)
+                .padding(16.dp)
+        ) {
+            when (tab) {
+                0 -> Home(sankalp, { sankalp = it }, count, target, { count = 0 }, { if (count < target) count++ })
+                1 -> Mantra(count, target, { count = 0 }, { count++ }, { target = it })
+                2 -> MediaScreen("Audio", media.filter { it.type == "audio" || it.type == "file" }, { picker.launch(arrayOf("audio/*")) }, { x -> media = media.filterNot { it.id == x.id } }, ctx)
+                3 -> MediaScreen("Video", media.filter { it.type == "video" || it.type == "file" }, { picker.launch(arrayOf("video/*")) }, { x -> media = media.filterNot { it.id == x.id } }, ctx)
+                4 -> MediaScreen("Images", media.filter { it.type == "image" || it.type == "file" }, { picker.launch(arrayOf("image/*")) }, { x -> media = media.filterNot { it.id == x.id } }, ctx)
+                5 -> Browser(webUrl, { webUrl = it })
+                6 -> SettingsScreen(media.size, { picker.launch(arrayOf("*/*")) })
+            }
+        }
+    }
+}
+
+@Composable
+fun Home(
+    s: String,
+    set: (String) -> Unit,
+    c: Int,
+    t: Int,
+    reset: () -> Unit,
+    inc: () -> Unit
+) {
+    Text("Daily Sankalp", style = MaterialTheme.typography.headlineMedium)
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = s,
+        onValueChange = set,
+        label = { Text("Today's Sankalp") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(24.dp))
+    Text("Mantra progress: $c / $t")
+    Spacer(Modifier.height(4.dp))
+    LinearProgressIndicator(
+        progress = { if (t == 0) 0f else (c.toFloat() / t).coerceIn(0f, 1f) },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(12.dp))
+    Button(onClick = inc, Modifier.fillMaxWidth()) {
+        Text("Tap Mantra")
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(onClick = reset, Modifier.fillMaxWidth()) {
+        Text("Reset")
+    }
+}
+
+@Composable
+fun Mantra(
+    c: Int,
+    t: Int,
+    reset: () -> Unit,
+    inc: () -> Unit,
+    setTarget: (Int) -> Unit
+) {
+    Text("Mantra Counter", style = MaterialTheme.typography.headlineMedium)
+    Spacer(Modifier.height(8.dp))
+    Text("$c / $t", style = MaterialTheme.typography.displaySmall)
+    Spacer(Modifier.height(12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(108, 1001).forEach { targetValue ->
+            Button(onClick = { setTarget(targetValue); reset() }) {
+                Text("$targetValue")
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(onClick = reset) {
+        Text("Reset")
+    }
+    Spacer(Modifier.height(16.dp))
+    Button(
+        onClick = inc,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(100.dp)
+    ) {
+        Text("TAP", style = MaterialTheme.typography.headlineLarge)
+    }
+}
+
+@Composable
+fun MediaScreen(
+    title: String,
+    list: List<MediaItem>,
+    add: () -> Unit,
+    del: (MediaItem) -> Unit,
+    ctx: Context
+) {
+    Text(title, style = MaterialTheme.typography.headlineMedium)
+    Spacer(Modifier.height(8.dp))
+    Button(onClick = add) {
+        Text("Add $title")
+    }
+    Spacer(Modifier.height(8.dp))
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(list) { m ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(m.name, Modifier.weight(1f))
+                TextButton(onClick = { del(m) }) {
+                    Text("Delete")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun Browser(url: String, setUrl: (String) -> Unit) {
+    Text("Browser", style = MaterialTheme.typography.headlineMedium)
+    Spacer(Modifier.height(8.dp))
+    var text by remember { mutableStateOf(url) }
+    Row(modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier.weight(1f),
+            singleLine = true
+        )
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = { setUrl(text) }) {
+            Text("Go")
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    AndroidView(
+        factory = { c ->
+            WebView(c).apply {
+                webViewClient = WebViewClient()
+                settings.javaScriptEnabled = true
+                loadUrl(url)
+            }
+        },
+        update = { it.loadUrl(url) },
+        modifier = Modifier.fillMaxSize()
+    )
+}
+
+@Composable
+fun SettingsScreen(n: Int, add: () -> Unit) {
+    Text("Settings", style = MaterialTheme.typography.headlineMedium)
+    Spacer(Modifier.height(8.dp))
+    Text("Local media items: $n")
+    Spacer(Modifier.height(12.dp))
+    Button(onClick = add) {
+        Text("Import content")
+    }
+    Spacer(Modifier.height(12.dp))
+    Text(
+        "Future-ready: more mantras, meditation, Tai-Chi music, Hanuman Chalisa, Om chanting and voice controls.",
+        style = MaterialTheme.typography.bodyMedium
+    )
+}
