@@ -8,7 +8,6 @@ Features in this starter build:
 - Settings
 - Double-back exit behavior
 - Android APK project structure
-- install
   
 Build:
 1. Open this folder in Android Studio.
