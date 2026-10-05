@@ -7,8 +7,9 @@ Features in this starter build:
 - In-app web browser / Google
 - Settings
 - Double-back exit behavior
-- Android Studio project structure
-
+- Android APK project structure
+- install
+  
 Build:
 1. Open this folder in Android Studio.
 2. Let Gradle sync.
